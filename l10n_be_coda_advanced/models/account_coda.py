@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2016 Noviat.
+# Copyright 2009-2019 Noviat.
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
+
 from openerp import api, fields, models, _
+from openerp.exceptions import Warning as UserError
 
 
 class AccountCoda(models.Model):
@@ -44,6 +46,10 @@ class AccountCoda(models.Model):
     @api.multi
     def unlink(self):
         for coda in self:
+            if coda.state != 'draft':
+                raise UserError(
+                    _("Only CODA File objects in state"
+                      " 'draft' can be deleted !"))
             coda.bank_statement_ids.unlink()
         return super(AccountCoda, self).unlink()
 
@@ -57,7 +63,7 @@ class AccountCoda(models.Model):
         wiz_vals = {
             'coda_data': self.coda_data,
             'coda_fname': self.name,
-            }
+        }
         wizard = self.env['account.coda.import'].create(wiz_vals)
         module = __name__.split('addons.')[1].split('.')[0]
         wiz_view = self.env.ref(
@@ -72,4 +78,4 @@ class AccountCoda(models.Model):
             'target': 'new',
             'context': dict(self._context, coda_id=self.id),
             'type': 'ir.actions.act_window',
-            }
+        }

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2017 Noviat.
+# Copyright 2009-2018 Noviat.
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 import logging
@@ -38,7 +38,7 @@ class CommonAccrual(object):
             'product_id': entry.get('product_id') or False,
             'account_id': entry['account_id'] or False,
             'entry_type': entry['entry_type'],
-            }
+        }
 
     def _accrual_hashcode(self, entry):
         hc_fields = self._accrual_hashcode_fields(entry)
@@ -61,6 +61,7 @@ class CommonAccrual(object):
         grouped = {}
         fields_to_sum = self._accrual_fields_to_sum()
         for entry in aml_vals:
+            self._update_accrual_move_line_vals(entry)
             hashcode = self._accrual_hashcode(entry)
             if hashcode in grouped:
                 for field in entry:
@@ -71,18 +72,32 @@ class CommonAccrual(object):
 
         accruals = {}
         for group in grouped:
+            create_aml = True
             entry = grouped[group]
             entry_type = entry['entry_type']
-            del entry['entry_type']
             entry['move_id'] = accrual_move_id.id
-            self._update_accrual_move_line_vals(entry)
-            aml = self.env['account.move.line'].create(entry)
-            if entry_type == 'accrual':
+            del entry['entry_type']
+            del entry['origin']
+            if entry['debit'] and entry['credit']:
+                amt = entry['debit'] - entry['credit']
+                if self.company_id.currency_id.is_zero(amt):
+                    create_aml = False
+                if amt > 0:
+                    entry['debit'] = amt
+                    entry['credit'] = 0.0
+                else:
+                    entry['debit'] = 0.0
+                    entry['credit'] = -amt
+            if create_aml:
+                aml = self.env['account.move.line'].create(entry)
+            if entry_type == 'accrual' and create_aml:
                 accruals[entry.get('product_id')] = aml
 
         return accrual_move_id.id, accruals
 
-    def _reconcile_accrued_expense_lines(self, accrual_lines):
+    def _reconcile_accrued_expense_lines(
+            self, accrual_lines,
+            writeoff_period_id=False, writeoff_journal_id=False):
         """
         The 'to_correct' dict is returned so that extension
         modules can take specific actions on these entries
@@ -97,6 +112,22 @@ class CommonAccrual(object):
         for p_id in accrual_lines:
             to_reconcile = accrual_lines[p_id]
             if len(to_reconcile) < 2:
+                _logger.error(_(
+                    "%s, accrual reconcile failed for "
+                    "account.move.line ids %s, "
+                    "len(to_reconcile) < 2"),
+                    self._name, [x.id for x in to_reconcile]
+                )
+                continue
+            if to_reconcile.mapped('reconcile_id'):
+                rec_refs = to_reconcile.mapped('reconcile_id').mapped('name')
+                _logger.error(_(
+                    "%s, accrual reconcile failed for "
+                    "account.move.line ids %s, "
+                    "some entries are already reconciled, "
+                    "cf. reconcile refs %s"),
+                    self._name, [x.id for x in to_reconcile],
+                    rec_refs)
                 continue
             check = check_cur = 0.0
             currencies = self.env['res.currency']
@@ -111,33 +142,38 @@ class CommonAccrual(object):
                     "%s, accrual reconcile failed for "
                     "account.move.line ids %s, "
                     "foreign currencies inconsistent"),
-                    self.name, [x.id for x in to_reconcile]
-                    )
+                    self._name, [x.id for x in to_reconcile]
+                )
             elif len(currencies) == 1:
                 if currencies.is_zero(check_cur):
-                    ctx = dict(self._context,
-                               account_period_prefer_normal=True)
-                    period = self.env[
-                        'account.period'].with_context(ctx).find()
-                    to_reconcile.reconcile(
-                        writeoff_journal_id=to_reconcile[0].journal_id.id,
-                        writeoff_period_id=period.id)
+                    if not writeoff_period_id:
+                        ctx = dict(self._context,
+                                   account_period_prefer_normal=True)
+                        writeoff_period = self.env[
+                            'account.period'].with_context(ctx).find()
+                        writeoff_period_id = writeoff_period.id
+                    if not writeoff_journal_id:
+                        writeoff_journal_id = \
+                            self.company_id.accrual_journal_id.id
+                    to_reconcile.with_context(self._context).reconcile(
+                        writeoff_period_id=writeoff_period_id,
+                        writeoff_journal_id=writeoff_journal_id)
                 else:
                     to_correct[p_id] = (accrual_lines[p_id], check)
                     _logger.error(_(
                         "%s, accrual reconcile failed for "
                         "account.move.line ids %s, "
                         "sum(amount_currency != 0.0"),
-                        self.name, [x.id for x in to_reconcile]
-                        )
+                        self._name, [x.id for x in to_reconcile]
+                    )
             elif self.company_id.currency_id.is_zero(check):
-                to_reconcile.reconcile()
+                to_reconcile.with_context(self._context).reconcile()
             else:
                 to_correct[p_id] = (accrual_lines[p_id], check)
                 _logger.error(_(
                     "%s, accrual reconcile failed for "
                     "account.move.line ids %s, "
                     "sum(debit) != sum(credit)"),
-                    self.name, [x.id for x in to_reconcile]
-                    )
+                    self._name, [x.id for x in to_reconcile]
+                )
         return to_correct

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2016 Noviat
+# Copyright 2009-2017 Noviat
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 from openerp import api, fields, models, _
@@ -55,8 +55,8 @@ class AccountReinvoiceLine(models.Model):
                 out_invoices += out_invoice
         if out_invoices:
             inv_list = [
-                ((x.type == 'out_invoice' and _("Invoice") or _("Refund"))
-                 + " " + (x.number or ''),
+                ((x.type == 'out_invoice' and _("Invoice") or _("Refund")
+                  ) + " " + (x.number or ''),
                  x.id)
                 for x in out_invoices]
             inv_list = ', '.join([

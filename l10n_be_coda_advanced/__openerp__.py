@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2017 Noviat.
+# Copyright 2009-2019 Noviat.
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 {
     'name': 'Belgium - Advanced CODA statements Import',
-    'version': '8.0.2.0.4',
+    'version': '8.0.2.3.1',
     'license': 'AGPL-3',
     'author': 'Noviat',
     'website': 'http://www.noviat.com',
@@ -35,6 +35,6 @@
         'views/coda_bank_statement.xml',
         'views/menuitem.xml',
         'wizard/account_coda_import.xml',
-        ],
+    ],
     'installable': True,
 }

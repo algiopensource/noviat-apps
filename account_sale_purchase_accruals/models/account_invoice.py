@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2017 Noviat.
+# Copyright 2009-2018 Noviat.
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 import logging
@@ -63,7 +63,9 @@ class AccountInvoice(models.Model, CommonAccrual):
         # pass the invoice date in the context
         # in order to retrieve the correct purchase price
         # for the expense accruals
-        ctx_date = dict(self._context, date=self.date_invoice)
+        ctx_date = dict(self._context,
+                        date=self.date_invoice,
+                        date_p=self.date_invoice)
 
         for ail in self.with_context(ctx_date).invoice_line:
             product = ail.product_id
@@ -120,7 +122,8 @@ class AccountInvoice(models.Model, CommonAccrual):
                     'name': ail.name,
                     'analytic_account_id': ail.account_analytic_id.id,
                     'entry_type': 'expense',
-                    }
+                    'origin': ail,
+                }
                 aml_vals.append(expense_vals)
 
                 accrual_vals = {
@@ -133,12 +136,13 @@ class AccountInvoice(models.Model, CommonAccrual):
                         procurement_action == 'move' and partner.id or False,
                     'name': ail.name,
                     'entry_type': 'accrual',
-                    }
+                    'origin': ail,
+                }
                 if cur:
                     accrual_vals.update({
                         'amount_currency': -amount_cur,
                         'currency_id': cur.id,
-                        })
+                    })
                 aml_vals.append(accrual_vals)
 
         if aml_vals:
@@ -146,18 +150,19 @@ class AccountInvoice(models.Model, CommonAccrual):
             self.write({'accrual_move_id': am_id})
 
         # reconcile with Stock Valuation or PO accruals
-        accruals = False
+        accruals = self.env['account.move']
         if stock_pickings:
-            accruals = stock_pickings.mapped('valuation_move_ids')
+            accruals |= stock_pickings.mapped('valuation_move_ids')
         if purchase_orders:
-            accruals = purchase_orders.mapped('s_accrual_move_id')
+            accruals |= purchase_orders.mapped('s_accrual_move_id')
         if accruals:
             amls = accruals.mapped('line_id')
             for aml in amls:
                 if aml.product_id.id in inv_accruals \
                         and aml.account_id in inv_accrual_accounts:
                     inv_accruals[aml.product_id.id] += aml
-            self._reconcile_accrued_expense_lines(inv_accruals)
+            self.with_context(ctx_date)._reconcile_accrued_expense_lines(
+                inv_accruals, writeoff_period_id=self.period_id.id)
 
         # reconcile refund accrual with original invoice accrual
         # remark: this operation may fail, e.g. if original invoice
@@ -176,11 +181,12 @@ class AccountInvoice(models.Model, CommonAccrual):
                     if orig_aml.product_id.id in accrual_lines:
                         accrual_lines[orig_aml.product_id.id] += orig_aml
         if accrual_lines:
-            self._reconcile_accrued_expense_lines(accrual_lines)
+            self.with_context(ctx_date)._reconcile_accrued_expense_lines(
+                accrual_lines, writeoff_period_id=self.period_id.id)
 
     def _supplier_invoice_reconcile_accruals(self):
         """
-        Reconcile the accruel entries of the
+        Reconcile the accrual entries of the
         Purchase Invoice with it's counterpart created during the
         Purchase Order Confirmation or Incoming Picking.
         """
@@ -192,7 +198,10 @@ class AccountInvoice(models.Model, CommonAccrual):
                 accrual_account = \
                     product.recursive_property_stock_account_input
                 if si_aml.account_id == accrual_account:
-                    accrual_lines[product.id] = si_aml
+                    if product.id in accrual_lines:
+                        accrual_lines[product.id] |= si_aml
+                    else:
+                        accrual_lines[product.id] = si_aml
                     pickings = self.purchase_order_ids.mapped('picking_ids')
                     accruals = pickings.mapped('valuation_move_ids')
                 else:
@@ -200,7 +209,10 @@ class AccountInvoice(models.Model, CommonAccrual):
                         product.recursive_accrued_expense_in_account_id
                     if accrual_account \
                             and si_aml.account_id == accrual_account:
-                        accrual_lines[product.id] = si_aml
+                        if product.id in accrual_lines:
+                            accrual_lines[product.id] |= si_aml
+                        else:
+                            accrual_lines[product.id] = si_aml
                         accruals = self.purchase_order_ids.mapped(
                             'p_accrual_move_id')
                     else:
@@ -209,9 +221,11 @@ class AccountInvoice(models.Model, CommonAccrual):
                 for aml in amls:
                     if aml.account_id == accrual_account \
                             and aml.product_id == product:
-                        accrual_lines[product.id] += aml
+                        accrual_lines[product.id] |= aml
         if accrual_lines:
-            self._reconcile_accrued_expense_lines(accrual_lines)
+            ctx = dict(self._context, date_p=self.date_invoice)
+            self.with_context(ctx)._reconcile_accrued_expense_lines(
+                accrual_lines, writeoff_period_id=self.period_id.id)
 
     @api.multi
     def invoice_validate(self):

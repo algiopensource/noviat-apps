@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2016 Noviat
+# Copyright 2009-2017 Noviat
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 from openerp import api, fields, models, _
@@ -12,7 +12,7 @@ class AccountReinvoiceKey(models.Model):
     _sql_constraints = [
         ('name_uniq', 'unique(name, company_id)',
          'The Reinvocie Key must be unique per Company!'),
-        ]
+    ]
 
     name = fields.Char(
         string='Name', index=True, required=True)
@@ -54,8 +54,8 @@ class AccountReinvoiceKeyInstance(models.Model):
         string='Reinvoice Key', ondelete='cascade')
     state = fields.Selection([
         ('draft', 'Draft'),
-        ('confirm', 'Confirmed'),
-        ], string='Status',
+        ('confirm', 'Confirmed')],
+        string='Status',
         index=True, readonly=True, default='draft', copy=False)
     date_start = fields.Date(
         string='Start Date', required=True,

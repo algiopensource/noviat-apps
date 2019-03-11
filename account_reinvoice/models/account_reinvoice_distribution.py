@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2009-2016 Noviat
+# Copyright 2009-2017 Noviat
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 from openerp import api, fields, models
@@ -29,7 +29,7 @@ class AccountReinvoiceDistribution(models.Model):
     _sql_constraints = [
         ('name_uniq', 'unique(name, company_id)',
          'The Reinvoice Distribution must be unique per Company!'),
-        ]
+    ]
 
     def init(self, cr):
         cr.execute("""

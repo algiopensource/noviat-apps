@@ -66,6 +66,7 @@
                     string="View Refund(s)"
                     class="oe_highlight"
                     invisible="not context.get('out_refund_ids')"/>
+            or
             <button string="Close" class="oe_link" special="cancel"/>
           </footer>
         </form>
@@ -80,6 +81,12 @@
       <field name="view_id" ref="account_reinvoice_wizard_view_form"/>
       <field name="target">new</field>
     </record>
+
+    <menuitem id="account_reinvoice_wizard_menu"
+              name="Manual Reinvoice"
+              action="account_reinvoice_wizard_action"
+              parent="menu_reinvoice_processing"
+              sequence="10"/>
 
   </data>
 </openerp>
